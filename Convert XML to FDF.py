@@ -30,7 +30,7 @@ def sanitize_for_fdf(text):
         text = text.replace(special, replacement)
     
     # Replace any remaining non-latin1 characters with '?'
-    return text.encode('latin-1', errors='replace').decode('latin-1')
+    return text.encode('latin-1', errors="ignore").decode('latin-1')
 
 # === NAMESPACES FROM XML FILE===
 namespaces = {
@@ -40,14 +40,27 @@ namespaces = {
     'my': 'http://schemas.microsoft.com/office/infopath/2003/myXSD/2005-04-28T12:10:52'
 }
 
-# === FUNCTION TO SELECT INPUT FOLDER ===
+# === SELECT INPUT FOLDER ===
 def select_input_folder():
+    """Select the folder containing XML files to convert."""
     tk.Tk().withdraw()
     folder_path = filedialog.askdirectory(title="Select the folder containing XML files")
     if not folder_path:
         messagebox.showwarning("Error", "No folder selected. The program will exit.")
         exit()
     return folder_path
+
+def select_template_pdf():
+    """Select the PDF template file to use for the conversion."""
+    tk.Tk().withdraw()
+    file_path = filedialog.askopenfilename(
+        title="Select the PDF template file",
+        filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")]
+    )
+    if not file_path:
+        messagebox.showwarning("Error", "No PDF template selected. The program will exit.")
+        exit()
+    return file_path
 
 # === DATE FORMATTING ===
 date_patterns = [
@@ -72,14 +85,22 @@ def format_date(value, file_name, progress_dialog):
             
                 return date.strftime("%m/%d/%y")
             except Exception as e:
-                progress_dialog.increment_date_errors()
+                progress_dialog.add_date_error(file_name, value)
                 progress_dialog.log(f"⚠️ Date format error in file '{file_name}' for value: '{value}'")
                 return value
     return value
 
 
+
 def main():
-    input_folder = select_input_folder()
+    # Show initial setup dialog
+    setup_dialog = InitialSetupDialog()
+    result = setup_dialog.run()
+    
+    if result is None:
+        return
+        
+    input_folder, template_pdf = result
     progress_dialog = ProgressDialog()
 
     # === WALK THROUGH INPUT FOLDER AND SUBFOLDERS SCANNING FOR XML FILES===
@@ -155,7 +176,7 @@ def main():
                 fdf_content = f"""%FDF-1.2
                 1 0 obj
                 << /FDF <<
-                /F (C:/Users/rmarcum/Desktop/FinalSheet2024.pdf)
+                /F ({template_pdf})
                 /Fields [
                 {chr(10).join(fdf_fields)}
                 ] >> >>
@@ -185,6 +206,7 @@ class ProgressDialog:
         self.window.title("XML to FDF Conversion Progress")
         self.window.geometry("900x600")
         self.error_details = []
+        self.date_error_details = []  # New list to store date formatting errors
         
         # Create and pack the text area
         self.text_area = scrolledtext.ScrolledText(self.window, wrap=tk.WORD, width=70, height=20)
@@ -204,7 +226,6 @@ class ProgressDialog:
         self.success_count = 0
         self.failure_count = 0
         self.date_format_errors = 0
-        self.my_count = 0
         
     def log(self, message):
         self.text_area.insert(tk.END, message + "\n")
@@ -216,13 +237,19 @@ class ProgressDialog:
         summary += f"Successfully converted {self.success_count} file(s).\n"
         summary += f"Failed to convert {self.failure_count} file(s).\n"
         summary += f"Date formatting errors encountered in {self.date_format_errors} field(s).\n"
-        summary += f"MYCOUNT: {self.my_count}\n"
 
         if self.error_details:
             summary += "\n=== Error Details ===\n"
             for file_name, error_msg in self.error_details:
                 summary += f"File: {file_name}\n"
                 summary += f"Error: {error_msg}\n"
+                summary += "-" * 50 + "\n"
+
+        if self.date_error_details:
+            summary += "\n=== Date Formatting Error Details ===\n"
+            for file_name, field_value in self.date_error_details:
+                summary += f"File: {file_name}\n"
+                summary += f"Invalid date value: {field_value}\n"
                 summary += "-" * 50 + "\n"
 
         self.log(summary)
@@ -236,12 +263,92 @@ class ProgressDialog:
         self.failure_count += 1
         self.error_details.append((file_name, error_msg))
 
-        
     def increment_date_errors(self):
         self.date_format_errors += 1
         
-    def set_my_count(self, count):
-        self.my_count = count
+    def add_date_error(self, file_name, value):
+        self.date_format_errors += 1
+        self.date_error_details.append((file_name, value))
+
+class InitialSetupDialog:
+    def __init__(self):
+        self.window = tk.Tk()
+        self.window.title("XML to FDF Converter Setup")
+        self.window.geometry("900x600")
+        
+        # Input folder selection
+        self.input_folder = tk.StringVar()
+        input_frame = ttk.LabelFrame(self.window, text="Input Folder", padding="10")
+        input_frame.pack(fill="x", padx=10, pady=5)
+        
+        self.input_entry = ttk.Entry(input_frame, textvariable=self.input_folder, width=50)
+        self.input_entry.pack(side="left", padx=5)
+        
+        input_button = ttk.Button(input_frame, text="Choose Folder", command=self.choose_input_folder)
+        input_button.pack(side="left", padx=5)
+        
+        # Template PDF selection
+        self.template_pdf = tk.StringVar()
+        template_frame = ttk.LabelFrame(self.window, text="PDF Template", padding="10")
+        template_frame.pack(fill="x", padx=10, pady=5)
+        
+        self.template_entry = ttk.Entry(template_frame, textvariable=self.template_pdf, width=50)
+        self.template_entry.pack(side="left", padx=5)
+        
+        template_button = ttk.Button(template_frame, text="Choose PDF", command=self.choose_template_pdf)
+        template_button.pack(side="left", padx=5)
+        
+        # Start button
+        self.start_button = ttk.Button(self.window, text="Start Conversion", command=self.start_conversion)
+        self.start_button.pack(pady=20)
+        
+        # Status label
+        self.status_var = tk.StringVar(value="Please select input folder and PDF template")
+        self.status_label = ttk.Label(self.window, textvariable=self.status_var, wraplength=550)
+        self.status_label.pack(pady=5)
+        
+        self.result = None
+        
+    def choose_input_folder(self):
+        folder_path = filedialog.askdirectory(title="Select the folder containing XML files")
+        if folder_path:
+            self.input_folder.set(folder_path)
+            self.update_status()
+    
+    def choose_template_pdf(self):
+        file_path = filedialog.askopenfilename(
+            title="Select the PDF template file",
+            filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")]
+        )
+        if file_path:
+            self.template_pdf.set(file_path)
+            self.update_status()
+    
+    def update_status(self):
+        if not self.input_folder.get() and not self.template_pdf.get():
+            self.status_var.set("Please select input folder and PDF template")
+        elif not self.input_folder.get():
+            self.status_var.set("Please select input folder")
+        elif not self.template_pdf.get():
+            self.status_var.set("Please select PDF template")
+        else:
+            self.status_var.set("Ready to start conversion")
+    
+    def start_conversion(self):
+        if not self.input_folder.get():
+            messagebox.showwarning("Error", "Please select an input folder")
+            return
+        if not self.template_pdf.get():
+            messagebox.showwarning("Error", "Please select a PDF template")
+            return
+            
+        self.result = (self.input_folder.get(), self.template_pdf.get())
+        self.window.destroy()
+    
+    def run(self):
+        self.window.mainloop()
+        return self.result
 
 if __name__ == "__main__":
     main()
+
