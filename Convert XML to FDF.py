@@ -12,12 +12,32 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from tkinter import scrolledtext
 
+def sanitize_for_fdf(text):
+    """Replace special characters with their closest ASCII equivalents."""
+    replacements = {
+        '\u2018': "'",  # Left single quote
+        '\u2019': "'",  # Right single quote
+        '\u201C': '"',  # Left double quote
+        '\u201D': '"',  # Right double quote
+        '\u2013': '-',  # En dash
+        '\u2014': '--', # Em dash
+        '\u2026': '...',# Ellipsis
+        '\u00A0': ' ',  # Non-breaking space
+    }
+    
+    # Replace known special characters
+    for special, replacement in replacements.items():
+        text = text.replace(special, replacement)
+    
+    # Replace any remaining non-latin1 characters with '?'
+    return text.encode('latin-1', errors='replace').decode('latin-1')
+
 # === NAMESPACES FROM XML FILE===
 namespaces = {
     'dfs': 'http://schemas.microsoft.com/office/infopath/2003/dataFormSolution',
     'q': 'http://schemas.microsoft.com/office/infopath/2003/ado/queryFields',
     'd': 'http://schemas.microsoft.com/office/infopath/2003/ado/dataFields',
-    'my': 'http://schemas.microsoft.com/office/infopath/2003/myXSD/2005-05-04T13:10:26'
+    'my': 'http://schemas.microsoft.com/office/infopath/2003/myXSD/2005-04-28T12:10:52'
 }
 
 # === FUNCTION TO SELECT INPUT FOLDER ===
@@ -63,7 +83,7 @@ def main():
     progress_dialog = ProgressDialog()
 
     # === WALK THROUGH INPUT FOLDER AND SUBFOLDERS SCANNING FOR XML FILES===
-    progress_dialog.log("----------------START -------------------")
+    progress_dialog.log("\n=== START ===\n")
     for root_dir, _, files in os.walk(input_folder):
         xml_files = [f for f in files if f.lower().endswith('.xml')]
         if not xml_files:
@@ -91,54 +111,45 @@ def main():
                 field_counter = defaultdict(int)
                 fdf_fields = []
 
-                # === EXTRACT FIELDS FROM d:MASTER_PART1 ===
-                for master in master_d:
-                    for attr, value in master.attrib.items():
-                        if value is None or value.strip() == "":
-                            continue
-                        value = format_date(value, xml_file, progress_dialog)
-                        field_counter[attr] += 1
-                        field_name = attr if field_counter[attr] == 1 else f"{attr}_{field_counter[attr]}"
-                        value = value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                        fdf_fields.append(f"<< /T ({field_name}) /V ({value}) >>")
-
                 # === EXTRACT FIELDS FROM q:MASTER_PART1 ===
                 for master in master_q:
                     for attr, value in master.attrib.items():
                         if value is None or value.strip() == "":
                             continue
                         value = format_date(value, xml_file, progress_dialog)
+                        value = sanitize_for_fdf(value)
                         field_counter[attr] += 1
                         field_name = attr if field_counter[attr] == 1 else f"{attr}_{field_counter[attr]}"
                         value = value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                         fdf_fields.append(f"<< /T ({field_name}) /V ({value}) >>")
 
-                # === EXTRACT FIELDS FROM my: (existing fields) ===
-                my_fields = root.find('.//dfs:myFields', namespaces)
-                my_count = 0
-                if my_fields is not None:
-                    for my_field in my_fields:
-                        my_count += 1
-                        if not my_field.tag.startswith('{' + namespaces['my'] + '}'):
-                            continue
-                            
-                        field_name = my_field.tag.split('}')[1]
-                        value = my_field.text if my_field.text else ''
-
-                        for attr_name, attr_value in my_field.attrib.items():
-                            if attr_name.startswith('{' + namespaces['my'] + '}'):
-                                nested_field_name = attr_name.split('}')[1]
-                                if attr_value and attr_value.strip():
-                                    fdf_fields.append(f"<< /T ({field_name}_{nested_field_name}) /V ({attr_value}) >>")
-
+                # === EXTRACT FIELDS FROM d:MASTER_PART1 ===
+                for master in master_d:
+                    for attr, value in master.attrib.items():
                         if value is None or value.strip() == "":
                             continue
-
                         value = format_date(value, xml_file, progress_dialog)
+                        value = sanitize_for_fdf(value)
+                        field_counter[attr] += 1
+                        field_name = attr if field_counter[attr] == 1 else f"{attr}_{field_counter[attr]}"
                         value = value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                         fdf_fields.append(f"<< /T ({field_name}) /V ({value}) >>")
-
-                progress_dialog.set_my_count(my_count)
+                
+                # Process all children with my: namespace directly from root
+                for my_field in root:
+                    if my_field.tag.startswith('{' + namespaces['my'] + '}'):
+                        field_name = my_field.tag.split('}')[1]
+                        value = my_field.text if my_field.text else ''
+                        
+                        # Skip if empty or nil
+                        if not value or value.strip() == '' or my_field.get('{http://www.w3.org/2001/XMLSchema-instance}nil') == 'true':
+                            continue
+                            
+                        # Process the value
+                        value = format_date(value, xml_file, progress_dialog)
+                        value = sanitize_for_fdf(value)
+                        value = value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                        fdf_fields.append(f"<< /T ({field_name}) /V ({value}) >>")
 
                 # === CREATE FDF CONTENT ===
                 fdf_content = f"""%FDF-1.2
@@ -162,17 +173,18 @@ def main():
                 progress_dialog.log(f"✅ FDF created: {output_file}")
 
             except Exception as e:
-                progress_dialog.increment_failure()
+                progress_dialog.increment_failure(xml_file, str(e))
                 progress_dialog.log(f"❌ Error processing file {xml_file}: {e}")
 
     progress_dialog.show_final_summary()
-    progress_dialog.window.mainloop()
+    progress_dialog.window.wait_window(progress_dialog.window)
 
 class ProgressDialog:
     def __init__(self):
         self.window = tk.Tk()
         self.window.title("XML to FDF Conversion Progress")
         self.window.geometry("900x600")
+        self.error_details = []
         
         # Create and pack the text area
         self.text_area = scrolledtext.ScrolledText(self.window, wrap=tk.WORD, width=70, height=20)
@@ -205,6 +217,14 @@ class ProgressDialog:
         summary += f"Failed to convert {self.failure_count} file(s).\n"
         summary += f"Date formatting errors encountered in {self.date_format_errors} field(s).\n"
         summary += f"MYCOUNT: {self.my_count}\n"
+
+        if self.error_details:
+            summary += "\n=== Error Details ===\n"
+            for file_name, error_msg in self.error_details:
+                summary += f"File: {file_name}\n"
+                summary += f"Error: {error_msg}\n"
+                summary += "-" * 50 + "\n"
+
         self.log(summary)
         self.progress_var.set("Conversion Complete")
         self.close_button.config(state='normal')
@@ -212,8 +232,10 @@ class ProgressDialog:
     def increment_success(self):
         self.success_count += 1
         
-    def increment_failure(self):
+    def increment_failure(self, file_name, error_msg):
         self.failure_count += 1
+        self.error_details.append((file_name, error_msg))
+
         
     def increment_date_errors(self):
         self.date_format_errors += 1
