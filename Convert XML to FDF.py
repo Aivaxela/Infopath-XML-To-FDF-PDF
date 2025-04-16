@@ -91,7 +91,6 @@ def format_date(value, file_name, progress_dialog):
     return value
 
 
-
 def main():
     # Show initial setup dialog
     setup_dialog = InitialSetupDialog()
@@ -143,6 +142,7 @@ def main():
                         field_name = attr if field_counter[attr] == 1 else f"{attr}_{field_counter[attr]}"
                         value = value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                         fdf_fields.append(f"<< /T ({field_name}) /V ({value}) >>")
+                        progress_dialog.add_unique_field(field_name)
 
                 # === EXTRACT FIELDS FROM d:MASTER_PART1 ===
                 for master in master_d:
@@ -155,6 +155,7 @@ def main():
                         field_name = attr if field_counter[attr] == 1 else f"{attr}_{field_counter[attr]}"
                         value = value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                         fdf_fields.append(f"<< /T ({field_name}) /V ({value}) >>")
+                        progress_dialog.add_unique_field(field_name)
                 
                 # Process all children with my: namespace directly from root
                 for my_field in root:
@@ -171,6 +172,7 @@ def main():
                         value = sanitize_for_fdf(value)
                         value = value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                         fdf_fields.append(f"<< /T ({field_name}) /V ({value}) >>")
+                        progress_dialog.add_unique_field(field_name)
 
                 # === CREATE FDF CONTENT ===
                 fdf_content = f"""%FDF-1.2
@@ -226,6 +228,7 @@ class ProgressDialog:
         self.success_count = 0
         self.failure_count = 0
         self.date_format_errors = 0
+        self.unique_fields = []
         
     def log(self, message):
         self.text_area.insert(tk.END, message + "\n")
@@ -237,6 +240,11 @@ class ProgressDialog:
         summary += f"Successfully converted {self.success_count} file(s).\n"
         summary += f"Failed to convert {self.failure_count} file(s).\n"
         summary += f"Date formatting errors encountered in {self.date_format_errors} field(s).\n"
+
+        fields_found = "\n=== Unique Fields Found ===\n"
+        self.unique_fields.sort()
+        for field in self.unique_fields:
+            fields_found += f"{field}\n"
 
         if self.error_details:
             summary += "\n=== Error Details ===\n"
@@ -253,6 +261,7 @@ class ProgressDialog:
                 summary += "-" * 50 + "\n"
 
         self.log(summary)
+        self.log(fields_found)
         self.progress_var.set("Conversion Complete")
         self.close_button.config(state='normal')
         
@@ -269,6 +278,10 @@ class ProgressDialog:
     def add_date_error(self, file_name, value):
         self.date_format_errors += 1
         self.date_error_details.append((file_name, value))
+
+    def add_unique_field(self, field):
+        if field not in self.unique_fields:
+            self.unique_fields.append(field)
 
 class InitialSetupDialog:
     def __init__(self):
@@ -351,4 +364,3 @@ class InitialSetupDialog:
 
 if __name__ == "__main__":
     main()
-
