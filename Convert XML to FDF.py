@@ -90,7 +90,6 @@ def format_date(value, file_name, progress_dialog):
                 return value
     return value
 
-
 def main():
     # Show initial setup dialog
     setup_dialog = InitialSetupDialog()
@@ -160,19 +159,32 @@ def main():
                 # Process all children with my: namespace directly from root
                 for my_field in root:
                     if my_field.tag.startswith('{' + namespaces['my'] + '}'):
+                        # Get the main field name without namespace
                         field_name = my_field.tag.split('}')[1]
                         value = my_field.text if my_field.text else ''
                         
-                        # Skip if empty or nil
-                        if not value or value.strip() == '' or my_field.get('{http://www.w3.org/2001/XMLSchema-instance}nil') == 'true':
-                            continue
-                            
-                        # Process the value
-                        value = format_date(value, xml_file, progress_dialog)
-                        value = sanitize_for_fdf(value)
-                        value = value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                        fdf_fields.append(f"<< /T ({field_name}) /V ({value}) >>")
-                        progress_dialog.add_unique_field(field_name)
+                        # Process the main field value if not empty or nil
+                        if value and value.strip() and my_field.get('{http://www.w3.org/2001/XMLSchema-instance}nil') != 'true':
+                            value = format_date(value, xml_file, progress_dialog)
+                            value = sanitize_for_fdf(value)
+                            value = value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                            fdf_fields.append(f"<< /T ({field_name}) /V ({value}) >>")
+                            progress_dialog.add_unique_field(field_name)
+
+                        # Process attributes (sub-fields)
+                        for attr_name, attr_value in my_field.attrib.items():
+                            # Check if the attribute has the my: prefix
+                            if attr_name.startswith('{' + namespaces['my'] + '}'):
+                                # Get the sub-field name without namespace
+                                sub_field_name = attr_name.split('}')[1]
+                                
+                                if attr_value and attr_value.strip():
+                                    # Process the sub-field value
+                                    attr_value = format_date(attr_value, xml_file, progress_dialog)
+                                    attr_value = sanitize_for_fdf(attr_value)
+                                    attr_value = attr_value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                                    fdf_fields.append(f"<< /T ({sub_field_name}) /V ({attr_value}) >>")
+                                    progress_dialog.add_unique_field(sub_field_name)
 
                 # === CREATE FDF CONTENT ===
                 fdf_content = f"""%FDF-1.2
