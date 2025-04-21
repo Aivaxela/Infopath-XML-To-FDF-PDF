@@ -1,3 +1,7 @@
+# === FORM TEMPLATES ===
+# FinalSheet2024
+# SWDISC-NoCalculations
+
 # === IMPORTS ===
 import os
 import re
@@ -7,7 +11,6 @@ from datetime import datetime
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from tkinter import scrolledtext
-from pypdf import PdfReader, PdfWriter
 
 def sanitize_for_fdf(text):
     """Replace special characters with their closest ASCII equivalents."""
@@ -114,7 +117,7 @@ def main():
 
         for xml_file in xml_files:
             input_file = os.path.join(root_dir, xml_file)
-            output_file = os.path.join(output_subfolder, f"{os.path.splitext(xml_file)[0]}.pdf")
+            output_file = os.path.join(output_subfolder, f"{os.path.splitext(xml_file)[0]}.fdf")
 
             try:
                 tree = ET.parse(input_file)
@@ -125,7 +128,7 @@ def main():
                 master_q = root.findall('.//q:MASTER_PART1', namespaces)
 
                 field_counter = defaultdict(int)
-                pdf_fields = {}
+                fdf_fields = []
 
                 # === EXTRACT FIELDS FROM q:MASTER_PART1 ===
                 for master in master_q:
@@ -136,7 +139,8 @@ def main():
                         value = sanitize_for_fdf(value)
                         field_counter[attr] += 1
                         field_name = attr if field_counter[attr] == 1 else f"{attr}_{field_counter[attr]}"
-                        pdf_fields[field_name] = value
+                        value = value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                        fdf_fields.append(f"<< /T ({field_name}) /V ({value}) >>")
                         progress_dialog.add_unique_field(field_name)
 
                 # === EXTRACT FIELDS FROM d:MASTER_PART1 ===
@@ -148,7 +152,8 @@ def main():
                         value = sanitize_for_fdf(value)
                         field_counter[attr] += 1
                         field_name = attr if field_counter[attr] == 1 else f"{attr}_{field_counter[attr]}"
-                        pdf_fields[field_name] = value
+                        value = value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                        fdf_fields.append(f"<< /T ({field_name}) /V ({value}) >>")
                         progress_dialog.add_unique_field(field_name)
                 
                 # Process all children with my: namespace directly from root
@@ -162,30 +167,42 @@ def main():
                         if value and value.strip() and my_field.get('{http://www.w3.org/2001/XMLSchema-instance}nil') != 'true':
                             value = format_date(value, xml_file, progress_dialog)
                             value = sanitize_for_fdf(value)
-                            pdf_fields[field_name] = value
+                            value = value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                            fdf_fields.append(f"<< /T ({field_name}) /V ({value}) >>")
                             progress_dialog.add_unique_field(field_name)
 
                         # Process attributes (sub-fields)
                         for attr_name, attr_value in my_field.attrib.items():
+                            # Check if the attribute has the my: prefix
                             if attr_name.startswith('{' + namespaces['my'] + '}'):
+                                # Get the sub-field name without namespace
                                 sub_field_name = attr_name.split('}')[1]
+                                
                                 if attr_value and attr_value.strip():
+                                    # Process the sub-field value
                                     attr_value = format_date(attr_value, xml_file, progress_dialog)
                                     attr_value = sanitize_for_fdf(attr_value)
-                                    pdf_fields[sub_field_name] = attr_value
+                                    attr_value = attr_value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                                    fdf_fields.append(f"<< /T ({sub_field_name}) /V ({attr_value}) >>")
                                     progress_dialog.add_unique_field(sub_field_name)
 
-                # === FILL PDF FORM ===
-                reader = PdfReader(template_pdf)
-                writer = PdfWriter()
+                # === CREATE FDF CONTENT ===
+                fdf_content = f"""%FDF-1.2
+                1 0 obj
+                << /FDF <<
+                /F ({template_pdf})
+                /Fields [
+                {chr(10).join(fdf_fields)}
+                ] >> >>
+                endobj
+                trailer
+                << /Root 1 0 R >>
+                %%EOF
+                """
 
-                for page in reader.pages:
-                    writer.add_page(page)
-                    writer.update_page_form_field_values(writer.pages[0], pdf_fields)
-
-                # === WRITE TO PDF FILE ===
+                # === WRITE TO FDF FILE ===
                 with open(output_file, "wb") as f:
-                    writer.write(f)
+                    f.write(fdf_content.encode("latin-1"))
 
                 progress_dialog.increment_success()
                 progress_dialog.log(f"✅ FDF created: {output_file}")
@@ -256,7 +273,7 @@ class ProgressDialog:
                 summary += "-" * 50 + "\n"
 
         self.log(summary)
-        # self.log(fields_found)
+        self.log(fields_found)
         self.progress_var.set("Conversion Complete")
         self.close_button.config(state='normal')
         
