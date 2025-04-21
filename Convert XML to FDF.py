@@ -1,7 +1,3 @@
-# === FORM TEMPLATES ===
-# FinalSheet2024
-# SWDISC-NoCalculations
-
 # === IMPORTS ===
 import os
 import re
@@ -37,7 +33,8 @@ namespaces = {
     'dfs': 'http://schemas.microsoft.com/office/infopath/2003/dataFormSolution',
     'q': 'http://schemas.microsoft.com/office/infopath/2003/ado/queryFields',
     'd': 'http://schemas.microsoft.com/office/infopath/2003/ado/dataFields',
-    'my': 'http://schemas.microsoft.com/office/infopath/2003/myXSD/2005-04-28T12:10:52'
+    'my': 'http://schemas.microsoft.com/office/infopath/2003/myXSD/2005-04-28T12:10:52',
+    'my': "http://schemas.microsoft.com/office/infopath/2003/myXSD/2006-03-08T21:14:31",
 }
 
 # === SELECT INPUT FOLDER ===
