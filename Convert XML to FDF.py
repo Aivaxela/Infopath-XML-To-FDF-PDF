@@ -28,13 +28,12 @@ def sanitize_for_fdf(text):
     # Replace any remaining non-latin1 characters with '?'
     return text.encode('latin-1', errors="ignore").decode('latin-1')
 
-# === NAMESPACES FROM XML FILE===
+#=== NAMESPACES FROM XML FILE===
 namespaces = {
     'dfs': 'http://schemas.microsoft.com/office/infopath/2003/dataFormSolution',
     'q': 'http://schemas.microsoft.com/office/infopath/2003/ado/queryFields',
     'd': 'http://schemas.microsoft.com/office/infopath/2003/ado/dataFields',
-    'my': 'http://schemas.microsoft.com/office/infopath/2003/myXSD/2005-04-28T12:10:52',
-    'my': "http://schemas.microsoft.com/office/infopath/2003/myXSD/2006-03-08T21:14:31",
+    'my': 'http://schemas.microsoft.com/office/infopath/2003/myXSD/',
 }
 
 # === SELECT INPUT FOLDER ===
@@ -155,7 +154,7 @@ def main():
                 
                 # Process all children with my: namespace directly from root
                 for my_field in root:
-                    if my_field.tag.startswith('{' + namespaces['my'] + '}'):
+                    if my_field.tag.startswith('{' + namespaces['my']):
                         # Get the main field name without namespace
                         field_name = my_field.tag.split('}')[1]
                         value = my_field.text if my_field.text else ''
@@ -171,7 +170,7 @@ def main():
                         # Process attributes (sub-fields)
                         for attr_name, attr_value in my_field.attrib.items():
                             # Check if the attribute has the my: prefix
-                            if attr_name.startswith('{' + namespaces['my'] + '}'):
+                            if attr_name.startswith('{' + namespaces['my']):
                                 # Get the sub-field name without namespace
                                 sub_field_name = attr_name.split('}')[1]
                                 
