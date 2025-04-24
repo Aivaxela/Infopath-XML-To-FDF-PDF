@@ -249,6 +249,7 @@ class ProgressDialog:
         summary += f"Failed to convert {self.failure_count} file(s).\n"
         summary += f"Date formatting errors encountered in {self.date_format_errors} field(s).\n"
 
+        fields_found_count = len(self.unique_fields)
         fields_found = "\n=== Unique Fields Found ===\n"
         self.unique_fields.sort()
         for field in self.unique_fields:
@@ -269,7 +270,7 @@ class ProgressDialog:
                 summary += "-" * 50 + "\n"
 
         self.log(summary)
-        self.log(fields_found)
+        self.log(f"Unique fields: {fields_found_count}")
         self.progress_var.set("Conversion Complete")
         self.close_button.config(state='normal')
         
@@ -288,6 +289,9 @@ class ProgressDialog:
         self.date_error_details.append((file_name, value))
 
     def add_unique_field(self, field):
+        # Skip fields that contain the InfoPath ADO mapping namespace
+        if '{http://schemas.microsoft.com/office/infopath/2003/adomapping}' in field:
+            return
         if field not in self.unique_fields:
             self.unique_fields.append(field)
 
@@ -295,7 +299,7 @@ class InitialSetupDialog:
     def __init__(self):
         self.window = tk.Tk()
         self.window.title("XML to FDF Converter Setup")
-        self.window.geometry("900x600")
+        self.window.geometry("480x300")
         
         # Input folder selection
         self.input_folder = tk.StringVar()
