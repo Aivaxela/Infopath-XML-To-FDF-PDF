@@ -1,2 +1,3 @@
-# infopath-xml-to-fdf-pdf
- Utility for converting Infopath XML files to FDF files for importing into PDF forms
+# XML-extraction-tools
+ - Convert InfoPath XML files to FDF files and fill PDF template form fields
+ - Read XML file and display fields/values
