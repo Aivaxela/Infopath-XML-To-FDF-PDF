@@ -36,6 +36,16 @@ namespaces = {
     'my': 'http://schemas.microsoft.com/office/infopath/2003/myXSD/',
 }
 
+#=== TEMPLATE MAPPING ===
+template_mapping = {
+    r"\\fs3\.lakecountyohio\.gov\\Utilities\\billing\\Utilities\\InfoPath\\Forms\\Water_Sewer_Unpaid_Final\.xsn": 
+        "S:/Utilities/InfoPath/Infopath forms - Acrobat/ViewOnly/Unpaid Finals-NoFormatting.pdf",
+    r"\\fs3\.lakecountyohio\.gov\\Utilities\\billing\\Utilities\\InfoPath\\Forms\\EE\.Sew\.Disc\.Adj\.Form\.xsn":
+        "S:/Utilities/InfoPath/Infopath forms - Acrobat/ViewOnly/SWDISC-NoCalculations.pdf",
+    r"\\fs3\.lakecountyohio\.gov\\Utilities\\billing\\Utilities\\InfoPath\\Forms\\Status_Report\.xsn":
+        "S:/Utilities/InfoPath/Infopath forms - Acrobat/ViewOnly/StatusReport-NoFormatting.pdf",
+}
+
 # === SELECT INPUT FOLDER ===
 def select_input_folder():
     """Select the folder containing XML files to convert."""
@@ -65,6 +75,29 @@ date_patterns = [
     r"(\d{2})/(\d{2})/(\d{4})",   # MM/DD/YYYY
     r"(\d{4})/(\d{2})/(\d{2})",   # YYYY/MM/DD
 ]
+
+def get_template_path(xml_file):
+    """Extract the template path from an XML file's href attribute."""
+    try:
+        with open(xml_file, 'r', encoding='utf-8') as f:
+            first_line = f.readline()
+            
+        # Extract href value using regex
+        href_match = re.search(r'href="file:///(.+?)"', first_line)
+        if not href_match:
+            return None
+            
+        href_path = href_match.group(1)
+        
+        # Check if the path matches any of our templates
+        for template_pattern, pdf_path in template_mapping.items():
+            if re.search(template_pattern, href_path):
+                return pdf_path
+                
+        return None
+    except Exception:
+        return None
+
 def format_date(value, file_name, progress_dialog):
     value = value.strip()  # Remove leading/trailing whitespace
     for pattern in date_patterns:
@@ -94,7 +127,7 @@ def main():
     if result is None:
         return
         
-    input_folder, template_pdf = result
+    input_folder = result
     progress_dialog = ProgressDialog()
 
     # === WALK THROUGH INPUT FOLDER AND SUBFOLDERS SCANNING FOR XML FILES===
@@ -107,12 +140,22 @@ def main():
         folder_name = os.path.basename(root_dir.rstrip("\\/"))
         parent_dir = os.path.dirname(root_dir.rstrip("\\/"))
         output_subfolder = os.path.join(parent_dir, f"{folder_name} - CONVERTED")
-        
-        if not os.path.exists(output_subfolder):
-            os.makedirs(output_subfolder)
+        output_folder_created = False
 
         for xml_file in xml_files:
             input_file = os.path.join(root_dir, xml_file)
+            
+            # Get the template path for this XML file
+            template_pdf = get_template_path(input_file)
+            if template_pdf is None:
+                continue  # Skip this file if no matching template found
+            
+            # Create output folder only when we find a valid XML file
+            if not output_folder_created:
+                if not os.path.exists(output_subfolder):
+                    os.makedirs(output_subfolder)
+                output_folder_created = True
+                
             output_file = os.path.join(output_subfolder, f"{os.path.splitext(xml_file)[0]}.fdf")
 
             try:
@@ -312,23 +355,12 @@ class InitialSetupDialog:
         input_button = ttk.Button(input_frame, text="Choose Folder", command=self.choose_input_folder)
         input_button.pack(side="left", padx=5)
         
-        # Template PDF selection
-        self.template_pdf = tk.StringVar()
-        template_frame = ttk.LabelFrame(self.window, text="PDF Template", padding="10")
-        template_frame.pack(fill="x", padx=10, pady=5)
-        
-        self.template_entry = ttk.Entry(template_frame, textvariable=self.template_pdf, width=50)
-        self.template_entry.pack(side="left", padx=5)
-        
-        template_button = ttk.Button(template_frame, text="Choose PDF", command=self.choose_template_pdf)
-        template_button.pack(side="left", padx=5)
-        
         # Start button
         self.start_button = ttk.Button(self.window, text="Start Conversion", command=self.start_conversion)
         self.start_button.pack(pady=20)
         
         # Status label
-        self.status_var = tk.StringVar(value="Please select input folder and PDF template")
+        self.status_var = tk.StringVar(value="Please select input folder")
         self.status_label = ttk.Label(self.window, textvariable=self.status_var, wraplength=550)
         self.status_label.pack(pady=5)
         
@@ -340,22 +372,9 @@ class InitialSetupDialog:
             self.input_folder.set(folder_path)
             self.update_status()
     
-    def choose_template_pdf(self):
-        file_path = filedialog.askopenfilename(
-            title="Select the PDF template file",
-            filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")]
-        )
-        if file_path:
-            self.template_pdf.set(file_path)
-            self.update_status()
-    
     def update_status(self):
-        if not self.input_folder.get() and not self.template_pdf.get():
-            self.status_var.set("Please select input folder and PDF template")
-        elif not self.input_folder.get():
+        if not self.input_folder.get():
             self.status_var.set("Please select input folder")
-        elif not self.template_pdf.get():
-            self.status_var.set("Please select PDF template")
         else:
             self.status_var.set("Ready to start conversion")
     
@@ -363,11 +382,8 @@ class InitialSetupDialog:
         if not self.input_folder.get():
             messagebox.showwarning("Error", "Please select an input folder")
             return
-        if not self.template_pdf.get():
-            messagebox.showwarning("Error", "Please select a PDF template")
-            return
             
-        self.result = (self.input_folder.get(), self.template_pdf.get())
+        self.result = self.input_folder.get()
         self.window.destroy()
     
     def run(self):
